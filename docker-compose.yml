@@ -1,0 +1,32 @@
+services:
+  origin:
+    build: ./origin
+    container_name: announcement-origin
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  proxy:
+    build: ./proxy
+    container_name: announcement-proxy
+    environment:
+      ORIGIN_URL: http://origin:8080/announcement
+      ORIGIN_TIMEOUT: "10"
+    ports:
+      - "8000:8000"
+    depends_on:
+      origin:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    container_name: announcement-web
+    ports:
+      - "8088:80"
+    depends_on:
+      proxy:
+        condition: service_healthy
+      origin:
+        condition: service_healthy
+    restart: unless-stopped

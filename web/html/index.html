@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>公告缓存代理 · 操作页</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e2e8f0; --muted:#94a3b8;
+          --blue:#38bdf8; --green:#4ade80; --red:#f87171; --amber:#fbbf24; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:20px 28px; border-bottom:1px solid var(--line); }
+  header h1 { margin:0 0 4px; font-size:20px; }
+  header p { margin:0; color:var(--muted); font-size:13px; }
+  main { max-width:1100px; margin:0 auto; padding:24px; display:grid;
+         grid-template-columns: 1fr 1fr; gap:20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .card h2 { margin:0 0 14px; font-size:15px; color:var(--blue); }
+  .full { grid-column: 1 / -1; }
+  pre { background:#0b1220; border:1px solid var(--line); border-radius:8px;
+        padding:14px; overflow:auto; min-height:120px; font-size:13px; white-space:pre-wrap;
+        word-break:break-all; margin:0 0 12px; }
+  button { border:0; border-radius:8px; padding:9px 18px; font-size:14px; cursor:pointer;
+           font-weight:600; margin-right:8px; }
+  button.primary { background:var(--blue); color:#082f49; }
+  button.danger { background:var(--red); color:#450a0a; }
+  button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .grid-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .metric { background:#0b1220; border:1px solid var(--line); border-radius:8px; padding:12px; }
+  .metric .num { font-size:24px; font-weight:700; }
+  .metric .label { font-size:12px; color:var(--muted); margin-top:2px; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+  .badge.fresh { background:#052e16; color:var(--green); }
+  .badge.stale { background:#451a03; color:var(--amber); }
+  .badge.empty { background:#3f0d12; color:var(--red); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  td, th { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; }
+  .muted { color:var(--muted); font-size:12px; }
+  #msg { font-size:13px; margin-left:8px; }
+  #msg.ok { color:var(--green); } #msg.err { color:var(--red); }
+  .origin-form { display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin-bottom:12px; }
+  .origin-form label { font-size:12px; color:var(--muted); display:block; margin-bottom:4px; }
+  .origin-form input { background:#0b1220; border:1px solid var(--line); color:var(--text);
+                       border-radius:8px; padding:8px 10px; font-size:13px; width:130px; }
+  .origin-form input.wide { width:260px; }
+  section + section { margin-top:16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>公告缓存代理 · 操作页</h1>
+  <p>读取公告 / 立即清缓存 / 查看命中与回源次数；下方可控制本地源站（改稿、延迟、503）。</p>
+</header>
+<main>
+  <section class="card full">
+    <h2>公告接口（经代理）<span id="cacheBadge"></span><span id="msg"></span></h2>
+    <pre id="annBody">点击「读取公告」发起请求。</pre>
+    <button class="primary" id="btnFetch">读取公告</button>
+    <button class="danger" id="btnClear">清除缓存</button>
+    <button class="ghost" id="btnRefresh">刷新统计</button>
+    <p class="muted">响应头 X-Cache-Status：HIT=新鲜命中 · MISS=回源取全文 · REVALIDATED=过期条件回源304沿用正文 · ERROR=回源失败。</p>
+  </section>
+
+  <section class="card">
+    <h2>代理统计与缓存状态</h2>
+    <div class="grid-stats">
+      <div class="metric"><div class="num" id="s-hit">-</div><div class="label">新鲜命中 HIT</div></div>
+      <div class="metric"><div class="num" id="s-origin">-</div><div class="label">回源请求总数</div></div>
+      <div class="metric"><div class="num" id="s-304">-</div><div class="label">304 沿用</div></div>
+      <div class="metric"><div class="num" id="s-200">-</div><div class="label">200 全文更新</div></div>
+      <div class="metric"><div class="num" id="s-reval">-</div><div class="label">条件回源次数</div></div>
+      <div class="metric"><div class="num" id="s-merged">-</div><div class="label">合并的等待客户端</div></div>
+      <div class="metric"><div class="num" id="s-err">-</div><div class="label">回源失败</div></div>
+      <div class="metric"><div class="num" id="s-purge">-</div><div class="label">清缓存次数</div></div>
+    </div>
+    <table style="margin-top:14px">
+      <tr><th>缓存代际</th><td id="c-gen">-</td></tr>
+      <tr><th>缓存条目</th><td id="c-entry">-</td></tr>
+      <tr><th>ETag</th><td id="c-etag">-</td></tr>
+      <tr><th>Age / max-age</th><td id="c-age">-</td></tr>
+      <tr><th>在途回源</th><td id="c-inflight">-</td></tr>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>源站控制（本地测试用）</h2>
+    <div class="origin-form">
+      <div><label>新公告内容</label><input class="wide" id="o-content" placeholder="输入改稿内容"></div>
+      <button class="primary" id="btnEdit">改稿</button>
+    </div>
+    <div class="origin-form">
+      <div><label>响应延迟(秒)</label><input id="o-delay" type="number" min="0" step="0.5" placeholder="如 5"></div>
+      <div><label>max-age(秒)</label><input id="o-maxage" type="number" min="0" placeholder="如 30"></div>
+      <button class="primary" id="btnConfig">应用配置</button>
+      <button class="danger" id="btn503">切换 503 模式</button>
+    </div>
+    <table>
+      <tr><th>当前修订</th><td id="o-rev">-</td></tr>
+      <tr><th>ETag</th><td id="o-etag">-</td></tr>
+      <tr><th>max-age</th><td id="o-max">-</td></tr>
+      <tr><th>延迟</th><td id="o-delayv">-</td></tr>
+      <tr><th>503 模式</th><td id="o-fail">-</td></tr>
+      <tr><th>源站请求数</th><td id="o-reqs">-</td></tr>
+    </table>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+function flash(text, ok=true) { const m=$("msg"); m.textContent=text; m.className=ok?"ok":"err";
+  setTimeout(()=>{m.textContent="";m.className="";},4000); }
+
+async function loadStats() {
+  try {
+    const r = await fetch("/api/proxy/admin/stats");
+    const d = await r.json();
+    const s = d.stats, c = d.cache, inf = d.inflight;
+    $("s-hit").textContent=s.hit; $("s-origin").textContent=s.origin_requests;
+    $("s-304").textContent=s.not_modified; $("s-200").textContent=s.refreshed;
+    $("s-reval").textContent=s.revalidations; $("s-merged").textContent=s.merged_waiters;
+    $("s-err").textContent=s.errors; $("s-purge").textContent=s.purges;
+    $("c-gen").textContent=c.generation;
+    $("c-entry").textContent=c.has_entry?(c.fresh?"新鲜":"已过期"):"无缓存";
+    $("c-etag").textContent=c.etag ?? "—";
+    $("c-age").textContent=c.has_entry?`${c.age} / ${c.max_age ?? "—"} 秒`:"—";
+    $("c-inflight").textContent=inf.active?`是（代际 ${inf.generation}，等待者 ${inf.waiters}）`:"否";
+    const b=$("cacheBadge");
+    if (!c.has_entry) { b.innerHTML='<span class="badge empty">无缓存</span>'; }
+    else if (c.fresh) { b.innerHTML='<span class="badge fresh">新鲜</span>'; }
+    else { b.innerHTML='<span class="badge stale">已过期</span>'; }
+  } catch (e) { flash("统计加载失败: "+e, false); }
+}
+
+async function fetchAnnouncement() {
+  $("btnFetch").disabled=true;
+  try {
+    const r = await fetch("/api/proxy/announcement", {cache:"no-store"});
+    const text = await r.text();
+    const status = r.headers.get("x-cache-status") || "?";
+    const age = r.headers.get("age") ?? "—";
+    $("annBody").textContent =
+      `HTTP ${r.status}  X-Cache-Status: ${status}  Age: ${age}\n\n${text}`;
+    if (!r.ok) flash("回源失败，代理未返回过期公告", false);
+  } catch (e) { flash("请求失败: "+e, false); }
+  finally { $("btnFetch").disabled=false; loadStats(); loadOrigin(); }
+}
+
+async function clearCache() {
+  $("btnClear").disabled=true;
+  try {
+    const r = await fetch("/api/proxy/admin/cache", {method:"POST"});
+    const d = await r.json();
+    flash(`缓存已清除（代际 ${d.generation}），立即生效`);
+  } catch (e) { flash("清缓存失败: "+e, false); }
+  finally { $("btnClear").disabled=false; loadStats(); }
+}
+
+async function loadOrigin() {
+  try {
+    const r = await fetch("/api/origin/admin/state");
+    const d = await r.json();
+    $("o-rev").textContent=d.revision; $("o-etag").textContent=d.etag;
+    $("o-max").textContent=d.max_age+" 秒"; $("o-delayv").textContent=d.delay+" 秒";
+    $("o-fail").textContent=d.fail_503?"开启（回源将 503）":"关闭";
+    $("o-reqs").textContent=d.stats.requests;
+  } catch (e) { /* 页面主功能不依赖源站面板 */ }
+}
+
+async function editOrigin() {
+  const content = $("o-content").value.trim();
+  if (!content) return flash("请输入改稿内容", false);
+  const r = await fetch("/api/origin/admin/edit", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({content})});
+  if (!r.ok) return flash("改稿失败", false);
+  $("o-content").value=""; flash("源站已改稿（ETag 变化，回源将取新全文）"); loadOrigin();
+}
+async function configOrigin() {
+  const body={};
+  const delay=$("o-delay").value; const maxage=$("o-maxage").value;
+  if (delay!=="") body.delay=parseFloat(delay);
+  if (maxage!=="") body.max_age=parseInt(maxage,10);
+  if (!Object.keys(body).length) return flash("请先填写延迟或 max-age", false);
+  const r = await fetch("/api/origin/admin/config", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  if (!r.ok) return flash("配置失败", false);
+  flash("源站配置已更新"); loadOrigin();
+}
+async function toggle503() {
+  const cur = $("o-fail").textContent.includes("开启");
+  const r = await fetch("/api/origin/admin/config", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({fail_503:!cur})});
+  if (!r.ok) return flash("切换失败", false);
+  flash(cur?"已关闭 503 模式":"已开启 503 模式，回源将失败"); loadOrigin();
+}
+
+$("btnFetch").onclick=fetchAnnouncement;
+$("btnClear").onclick=clearCache;
+$("btnRefresh").onclick=()=>{loadStats();loadOrigin();};
+$("btnEdit").onclick=editOrigin;
+$("btnConfig").onclick=configOrigin;
+$("btn503").onclick=toggle503;
+loadStats(); loadOrigin();
+setInterval(loadStats, 3000);
+</script>
+</body>
+</html>
